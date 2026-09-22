@@ -12,13 +12,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="ExcelOutputs\**" />
     <Compile Remove="JSON Outputs\**" />
+    <EmbeddedResource Remove="ExcelOutputs\**" />
     <EmbeddedResource Remove="JSON Outputs\**" />
+    <None Remove="ExcelOutputs\**" />
     <None Remove="JSON Outputs\**" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="ExcelOutputs\" />
+    <Folder Include="Excel Outputs\" />
     <Folder Include="Properties\PublishProfiles\" />
   </ItemGroup>
 
