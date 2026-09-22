@@ -15,8 +15,6 @@ namespace GetEnvironmentVariables
     {
         #region DirectoryProperties
         public string ExcelOutputs { get; }
-        public string JsonOutputs { get; }
-        public string PowerShellOutputs { get; }
         #endregion
 
 
@@ -39,8 +37,6 @@ namespace GetEnvironmentVariables
 
             // Resolve and Assign Paths
             ExcelOutputs = ResolvePath(config["Directories:Excel"]);
-            JsonOutputs = ResolvePath(config["Directories:JSON"]);
-            PowerShellOutputs = ResolvePath(config["Directories:PowerShell"]);
         }
         #endregion
 
