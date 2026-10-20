@@ -1,10 +1,15 @@
+using DanMarDev.DuplicateInstanceCheck;
+using DanMarDev.WakeDrives;
+using DanMarDev.WinForms_CustomTools;
 using Microsoft.Extensions.Configuration;
 using OfficeOpenXml;
 using OfficeOpenXml.Style;
 using Sunny.UI;
 using System.Collections;
 using System.Diagnostics;
+using System.Reflection;
 using System.Security.Principal;
+using static DanMarDev.WinForms_CustomTools.MsgBoxType;
 
 
 
@@ -15,6 +20,7 @@ namespace GetEnvironmentVariables
     {
         #region DirectoryProperties
         public string ExcelOutputs { get; }
+        public string MachineName => Environment.MachineName;
         #endregion
 
 
@@ -22,34 +28,30 @@ namespace GetEnvironmentVariables
         #region DirectoryContextConstructor
         public DirectoryContext()
         {
-            // Identify Contexts
+            // Identify runtime environment context
             string environment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production";
-            string machineName = Environment.MachineName; // "VJ_MUSICDEV" on your home PC
 
-            // Build the Configuration Cascade
+            // Build configuration cascade without unnecessary file watchers
             IConfiguration config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddJsonFile($"appsettings.{machineName}.json", optional: true) // Overrides if Home PC
-                .AddJsonFile($"appsettings.{environment}.json", optional: true) // Overrides if inside Visual Studio
-                .AddJsonFile("appsettings.Local.json", optional: true)          // Overrides if local dev file exists
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                .AddJsonFile($"appsettings.{MachineName}.json", optional: true)
+                .AddJsonFile($"appsettings.{environment}.json", optional: true)
+                .AddJsonFile("appsettings.Local.json", optional: true)
                 .Build();
 
-            // Resolve and Assign Paths
+            // Resolve and assign output directory path
             ExcelOutputs = ResolvePath(config["Directories:Excel"]);
         }
-        #endregion
 
-
-
-        #region HelperMethod
         private string ResolvePath(string? configuredPath)
         {
             if (string.IsNullOrWhiteSpace(configuredPath))
+            {
                 throw new InvalidOperationException("A required directory path is missing from the appsettings configuration.");
+            }
 
-            // If it's an absolute path (G:\..., B:\..., C:\...), return it as-is.
-            // If it's a relative path ("ExcelOutputs"), combine it with the exe's current directory.
+            // Return rooted path directly or combine relative path with base directory
             return Path.IsPathRooted(configuredPath)
                 ? configuredPath
                 : Path.Combine(AppContext.BaseDirectory, configuredPath);
@@ -65,40 +67,48 @@ namespace GetEnvironmentVariables
     {
         #region ClassConfig
         const int FORM_WIDTH = 1080;
-        const int FORM_HEIGHT = 800;
+        const int FORM_HEIGHT = 820;
         const int GRID_MARGIN = 16;
         const int HEADER_HEIGHT = 36;
-        const int TOAST_DURATION_MS = 1200;
+        const int TOAST_DURATION_MS = 1300;
         const int NAME_COLUMN_WIDTH = 260;
+        const string CELL_TOOLTIP_TEXT = "Left-click to copy  |  Right-click to update or delete";
 
-        private readonly DirectoryContext _directories;
-        private readonly Color _bgDark = Color.FromArgb(30, 30, 46);
-        private readonly Color _panelBg = Color.FromArgb(36, 36, 54);
-        private readonly Color _userAccent = Color.FromArgb(0, 188, 212);
-        private readonly Color _systemAccent = Color.FromArgb(255, 179, 0);
-        private readonly Color _gridBg = Color.FromArgb(40, 42, 60);
-        private readonly Color _gridAltRow = Color.FromArgb(48, 50, 72);
-        private readonly Color _gridSelectionBg = Color.FromArgb(60, 64, 98);
-        private readonly Color _textPrimary = Color.FromArgb(230, 230, 240);
-        private readonly Color _textSecondary = Color.FromArgb(170, 170, 190);
-        private readonly Color _headerRowBg = Color.FromArgb(28, 28, 42);
-        private readonly Color _borderSubtle = Color.FromArgb(58, 60, 82);
+        private DirectoryContext _directories { get; set; }
+        private Color _bgDark { get; } = Color.FromArgb(30, 30, 46);
+        private Color _panelBg { get; } = Color.FromArgb(36, 36, 54);
+        private Color _userAccent { get; } = Color.FromArgb(0, 188, 212);
+        private Color _systemAccent { get; } = Color.FromArgb(255, 179, 0);
+        private Color _deleteAccent { get; } = Color.FromArgb(255, 107, 107);
+        private Color _gridBg { get; } = Color.FromArgb(40, 42, 60);
+        private Color _gridAltRow { get; } = Color.FromArgb(48, 50, 72);
+        private Color _gridSelectionBg { get; } = Color.FromArgb(60, 64, 98);
+        private Color _textPrimary { get; } = Color.FromArgb(230, 230, 240);
+        private Color _textSecondary { get; } = Color.FromArgb(170, 170, 190);
+        private Color _headerRowBg { get; } = Color.FromArgb(28, 28, 42);
+        private Color _borderSubtle { get; } = Color.FromArgb(58, 60, 82);
 
-        private UIPanel _userPanel;
-        private UIPanel _systemPanel;
-        private DataGridView _userGrid;
-        private DataGridView _systemGrid;
-        private UISymbolButton _btnExport;
-        private UISymbolButton _btnAddUser;
-        private UISymbolButton _btnAddSystem;
-        private Label _toastLabel;
-        private System.Windows.Forms.Timer _toastTimer;
-        private ContextMenuStrip _gridContextMenu;
-        private DataGridView _contextTargetGrid;
-        private int _contextTargetRow = -1;
+        private Font _gridCellFont { get; } = new Font("Cascadia Code", 9.5f, FontStyle.Regular);
+        private Font _gridHeaderFont { get; } = new Font("Segoe UI Semibold", 10f);
+        private Font _gridEmptyFont { get; } = new Font("Segoe UI", 9.5f, FontStyle.Italic);
 
-        private List<EnvVarEntry> _userVars = new();
-        private List<EnvVarEntry> _systemVars = new();
+        private UIPanel _userPanel { get; set; }
+        private UIPanel _systemPanel { get; set; }
+        private DataGridView _userGrid { get; set; }
+        private DataGridView _systemGrid { get; set; }
+        private UITextBox _txtSearch { get; set; }
+        private UISymbolButton _btnClearSearch { get; set; }
+        private UISymbolButton _btnExport { get; set; }
+        private UISymbolButton _btnAddUser { get; set; }
+        private UISymbolButton _btnAddSystem { get; set; }
+        private Label _toastLabel { get; set; }
+        private System.Windows.Forms.Timer _toastTimer { get; set; }
+        private ContextMenuStrip _gridContextMenu { get; set; }
+        private DataGridView _contextTargetGrid { get; set; }
+        private int _contextTargetRow { get; set; } = -1;
+
+        private List<EnvVarEntry> _userVars { get; set; } = new();
+        private List<EnvVarEntry> _systemVars { get; set; } = new();
         #endregion
 
 
@@ -113,22 +123,22 @@ namespace GetEnvironmentVariables
             InitializeContextMenu();
             InitializeUserPanel();
             InitializeSystemPanel();
-            InitializeExportButton();
+            InitializeBottomBar();
             InitializeEvents();
         }
 
         private void InitializeForm()
         {
-            // Form properties
+            // Configure base form dimensions and dark styling
             this.Text = "Environment Variables";
             this.Size = new Size(FORM_WIDTH, FORM_HEIGHT);
-            this.MinimumSize = new Size(860, 600);
+            this.MinimumSize = new Size(860, 620);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = _bgDark;
             this.AllowShowTitle = true;
             this.ShowTitle = true;
 
-            // Sunny.UI style
+            // Apply Sunny.UI theme settings
             this.Style = UIStyle.DarkBlue;
             this.RectColor = _borderSubtle;
             this.ForeColor = _textPrimary;
@@ -138,11 +148,11 @@ namespace GetEnvironmentVariables
 
         private void InitializeToast()
         {
-            // Floating toast label for copy confirmation
+            // Floating toast label for action feedback
             _toastLabel = new Label
             {
                 AutoSize = false,
-                Size = new Size(140, 32),
+                Size = new Size(150, 32),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI Semibold", 10f),
                 ForeColor = Color.White,
@@ -164,92 +174,37 @@ namespace GetEnvironmentVariables
 
         private void InitializeContextMenu()
         {
-            // Styled right-click context menu for Update
-            _gridContextMenu = new ContextMenuStrip();
-            _gridContextMenu.BackColor = Color.FromArgb(40, 42, 60);
-            _gridContextMenu.ForeColor = _textPrimary;
-            _gridContextMenu.Font = new Font("Segoe UI", 10f);
-            _gridContextMenu.ShowImageMargin = false;
-            _gridContextMenu.Renderer = new DarkMenuRenderer(_borderSubtle, _gridSelectionBg);
+            // Styled right-click context menu for Update and Delete actions
+            _gridContextMenu = new ContextMenuStrip
+            {
+                BackColor = _gridBg,
+                ForeColor = _textPrimary,
+                Font = new Font("Segoe UI", 10f),
+                ShowImageMargin = false,
+                Renderer = new DarkMenuRenderer(_borderSubtle, _gridSelectionBg)
+            };
 
-            ToolStripMenuItem updateItem = new ToolStripMenuItem("✏️  Update Variable");
+            ToolStripMenuItem updateItem = new ToolStripMenuItem("✏️  Update Variable")
+            {
+                ForeColor = _textPrimary,
+                Padding = new Padding(4, 4, 4, 4)
+            };
             updateItem.Click += ContextMenu_UpdateClick;
+
+            ToolStripSeparator separator = new ToolStripSeparator();
+
+            ToolStripMenuItem deleteItem = new ToolStripMenuItem("🗑️  Delete Variable")
+            {
+                ForeColor = _deleteAccent,
+                Padding = new Padding(4, 4, 4, 4)
+            };
+            deleteItem.Click += ContextMenu_DeleteClick;
+
             _gridContextMenu.Items.Add(updateItem);
+            _gridContextMenu.Items.Add(separator);
+            _gridContextMenu.Items.Add(deleteItem);
         }
 
-        private void InitializeEvents()
-        {
-            this.Load += Form_EnvVars_Load;
-            this.Resize += Form_EnvVars_Resize;
-        }
-        #endregion
-
-
-
-        #region FormLoad
-        private void Form_EnvVars_Load(object? sender, EventArgs e)
-        {
-            // Epplus License Context
-            ExcelPackage.License.SetNonCommercialPersonal("<Vince Jackson>");
-
-            // Retrieve environment variables
-            _userVars = GetScopedEnvVars(EnvironmentVariableTarget.User);
-            _systemVars = GetScopedEnvVars(EnvironmentVariableTarget.Machine);
-
-            // Populate grids
-            PopulateGrid(_userGrid, _userVars, "User");
-            PopulateGrid(_systemGrid, _systemVars, "System");
-
-            // Position everything
-            LayoutPanels();
-        }
-
-        private void Form_EnvVars_Resize(object? sender, EventArgs e)
-        {
-            LayoutPanels();
-        }
-        #endregion
-
-
-
-        #region EnvironmentVariableRetrieval
-        private List<EnvVarEntry> GetScopedEnvVars(EnvironmentVariableTarget target)
-        {
-            List<EnvVarEntry> results = new();
-
-            try
-            {
-                IDictionary rawVars = Environment.GetEnvironmentVariables(target);
-
-                foreach (DictionaryEntry entry in rawVars)
-                {
-                    string name = entry.Key?.ToString() ?? string.Empty;
-                    string value = entry.Value?.ToString() ?? string.Empty;
-
-                    if (!string.IsNullOrWhiteSpace(name))
-                    {
-                        results.Add(new EnvVarEntry(name, value));
-                    }
-                }
-
-                results.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"Failed to retrieve {target} environment variables:\n{ex.Message}",
-                    "Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-            }
-
-            return results;
-        }
-        #endregion
-
-
-
-        #region PanelConstruction
         private void InitializeUserPanel()
         {
             _userPanel = CreateSectionPanel("User Environment Variables", _userAccent);
@@ -301,29 +256,6 @@ namespace GetEnvironmentVariables
             return panel;
         }
 
-        private UISymbolButton CreateAddButton(Color accentColor)
-        {
-            UISymbolButton btn = new UISymbolButton
-            {
-                Text = " Add",
-                Symbol = 61543, // Plus icon
-                SymbolSize = 16,
-                Size = new Size(82, 28),
-                Style = UIStyle.Custom,
-                FillColor = Color.FromArgb(44, 48, 70),
-                FillHoverColor = Color.FromArgb(56, 62, 92),
-                FillPressColor = Color.FromArgb(38, 40, 60),
-                RectColor = accentColor,
-                ForeColor = _textPrimary,
-                SymbolColor = accentColor,
-                Font = new Font("Segoe UI Semibold", 9f),
-                Radius = 5,
-                Cursor = Cursors.Hand
-            };
-
-            return btn;
-        }
-
         private DataGridView CreateStyledGrid(Color accentColor)
         {
             DataGridView grid = new DataGridView
@@ -348,7 +280,7 @@ namespace GetEnvironmentVariables
                     ForeColor = _textPrimary,
                     SelectionBackColor = _gridSelectionBg,
                     SelectionForeColor = Color.White,
-                    Font = new Font("Cascadia Code", 9.5f, FontStyle.Regular),
+                    Font = _gridCellFont,
                     Padding = new Padding(6, 4, 6, 4)
                 },
                 AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle
@@ -357,14 +289,14 @@ namespace GetEnvironmentVariables
                     ForeColor = _textPrimary,
                     SelectionBackColor = _gridSelectionBg,
                     SelectionForeColor = Color.White,
-                    Font = new Font("Cascadia Code", 9.5f, FontStyle.Regular),
+                    Font = _gridCellFont,
                     Padding = new Padding(6, 4, 6, 4)
                 },
                 ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
                 {
                     BackColor = _headerRowBg,
                     ForeColor = accentColor,
-                    Font = new Font("Segoe UI Semibold", 10f),
+                    Font = _gridHeaderFont,
                     Alignment = DataGridViewContentAlignment.MiddleLeft,
                     Padding = new Padding(8, 6, 6, 6),
                     SelectionBackColor = _headerRowBg,
@@ -374,10 +306,14 @@ namespace GetEnvironmentVariables
                 ColumnHeadersHeight = 38,
                 RowTemplate = { Height = 30 },
                 ScrollBars = ScrollBars.Vertical,
+                ShowCellToolTips = true,
                 Cursor = Cursors.Hand
             };
 
-            // Add columns
+            // Enable double buffering via reflection to prevent scroll and resize flicker
+            typeof(DataGridView).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(grid, true);
+
+            // Configure Name and Value columns
             DataGridViewTextBoxColumn colName = new DataGridViewTextBoxColumn
             {
                 Name = "colName",
@@ -398,121 +334,160 @@ namespace GetEnvironmentVariables
 
             grid.Columns.AddRange(colName, colValue);
 
-            // Tooltip for UX
-            grid.ShowCellToolTips = true;
-            grid.CellFormatting += (s, e) =>
+            return grid;
+        }
+
+        private UISymbolButton CreateAddButton(Color accentColor)
+        {
+            UISymbolButton btn = new UISymbolButton
             {
-                if (e.RowIndex >= 0 && e.ColumnIndex >= 0 && grid.Rows[e.RowIndex].Cells[e.ColumnIndex].Value != null)
-                {
-                    grid.Rows[e.RowIndex].Cells[e.ColumnIndex].ToolTipText = "Click to copy  |  Right-click to edit";
-                }
+                Text = " Add",
+                Symbol = 61543,
+                SymbolSize = 16,
+                Size = new Size(82, 28),
+                Style = UIStyle.Custom,
+                FillColor = Color.FromArgb(44, 48, 70),
+                FillHoverColor = Color.FromArgb(56, 62, 92),
+                FillPressColor = Color.FromArgb(38, 40, 60),
+                RectColor = accentColor,
+                ForeColor = _textPrimary,
+                SymbolColor = accentColor,
+                Font = new Font("Segoe UI Semibold", 9f),
+                Radius = 5,
+                Cursor = Cursors.Hand
             };
 
-            return grid;
+            return btn;
+        }
+
+        private void InitializeBottomBar()
+        {
+            // Quick filter textbox on bottom-left for searching variables across both scopes
+            _txtSearch = new UITextBox
+            {
+                Watermark = "Filter variables by name or value...",
+                Size = new Size(340, 38),
+                Font = new Font("Segoe UI", 10f),
+                Style = UIStyle.Custom,
+                FillColor = _gridBg,
+                ForeColor = _textPrimary,
+                RectColor = _borderSubtle,
+                Radius = 6,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+            };
+            _txtSearch.TextChanged += TxtSearch_TextChanged;
+            this.Controls.Add(_txtSearch);
+
+            // Clear filter button next to search box
+            _btnClearSearch = new UISymbolButton
+            {
+                Text = "Clear",
+                Symbol = 61453,
+                SymbolSize = 15,
+                Size = new Size(76, 38),
+                Style = UIStyle.Custom,
+                FillColor = Color.FromArgb(44, 48, 70),
+                FillHoverColor = Color.FromArgb(56, 62, 92),
+                FillPressColor = Color.FromArgb(38, 40, 60),
+                RectColor = _borderSubtle,
+                ForeColor = _textSecondary,
+                SymbolColor = _textSecondary,
+                Font = new Font("Segoe UI Semibold", 9f),
+                Radius = 6,
+                Visible = false,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+                Cursor = Cursors.Hand
+            };
+            _btnClearSearch.Click += (s, e) =>
+            {
+                _txtSearch.Text = string.Empty;
+                _txtSearch.Focus();
+            };
+            this.Controls.Add(_btnClearSearch);
+
+            // Export to Excel button on bottom-right
+            _btnExport = new UISymbolButton
+            {
+                Text = "  Export to Excel",
+                Symbol = 61568,
+                SymbolSize = 20,
+                Size = new Size(180, 42),
+                Style = UIStyle.Custom,
+                FillColor = Color.FromArgb(48, 52, 78),
+                FillHoverColor = Color.FromArgb(60, 66, 100),
+                FillPressColor = Color.FromArgb(40, 44, 68),
+                RectColor = _userAccent,
+                ForeColor = _textPrimary,
+                SymbolColor = _userAccent,
+                Font = new Font("Segoe UI Semibold", 10f),
+                Radius = 6,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                Cursor = Cursors.Hand
+            };
+            _btnExport.Click += BtnExport_Click;
+            this.Controls.Add(_btnExport);
+            _btnExport.BringToFront();
+        }
+
+        private void InitializeEvents()
+        {
+            this.Load += Form_EnvVars_Load;
+            this.Resize += Form_EnvVars_Resize;
         }
         #endregion
 
 
 
-        #region GridPopulation
-        private void PopulateGrid(DataGridView grid, List<EnvVarEntry> vars, string scope)
+        #region FormLifecycleEvents
+        private void Form_EnvVars_Load(object? sender, EventArgs e)
         {
-            grid.Rows.Clear();
-
-            if (vars.Count == 0)
+            // Verify single application instance mutex and halt immediately if duplicate
+            if (DuplicateInstanceCheck.IsDuplicateAppInstance())
             {
-                // Edge case: no environment variables found
-                grid.Rows.Add("(none)", $"No {scope} environment variables detected.");
-                grid.Rows[0].DefaultCellStyle.ForeColor = _textSecondary;
-                grid.Rows[0].DefaultCellStyle.Font = new Font("Segoe UI", 9.5f, FontStyle.Italic);
+                MsgBox.Show(ErrorExit, "Another instance of this application is already running.");
+                Application.Exit();
                 return;
             }
 
-            foreach (EnvVarEntry entry in vars)
+            // Wake corporate UNC G: drive when running outside home dev machine
+            if (_directories.MachineName != "VJ_MUSICDEV")
             {
-                grid.Rows.Add(entry.Name, entry.Value);
+                var tryWakeG = WakeDrives.Wake_GDrive();
+                if (!tryWakeG.DriveAwake)
+                {
+                    MsgBox.Show(ErrorExit, "G: Drive is inaccessible.");
+                    Application.Exit();
+                    return;
+                }
             }
+
+            // Configure EPPlus non-commercial license context
+            ExcelPackage.License.SetNonCommercialPersonal("<Vince Jackson>");
+
+            // Indicate elevated privileges in form title when running as Administrator
+            if (IsRunningAsAdmin())
+            {
+                this.Text = "Environment Variables  [Administrator]";
+            }
+
+            // Retrieve and display User and System environment variables
+            _userVars = GetScopedEnvVars(EnvironmentVariableTarget.User);
+            _systemVars = GetScopedEnvVars(EnvironmentVariableTarget.Machine);
+            ApplySearchFilter();
+
+            // Position panels and controls
+            LayoutPanels();
         }
 
-        private void RefreshGridData(EnvironmentVariableTarget target)
+        private void Form_EnvVars_Resize(object? sender, EventArgs e)
         {
-            if (target == EnvironmentVariableTarget.User)
-            {
-                _userVars = GetScopedEnvVars(EnvironmentVariableTarget.User);
-                PopulateGrid(_userGrid, _userVars, "User");
-            }
-            else
-            {
-                _systemVars = GetScopedEnvVars(EnvironmentVariableTarget.Machine);
-                PopulateGrid(_systemGrid, _systemVars, "System");
-            }
+            LayoutPanels();
         }
         #endregion
 
 
 
-        #region LayoutAndPositioning
-        private void LayoutPanels()
-        {
-            if (_userPanel == null || _systemPanel == null) return;
-
-            int clientTop = this.TitleHeight > 0 ? this.TitleHeight : 35;
-            int availableWidth = this.ClientSize.Width - (GRID_MARGIN * 2);
-            int buttonBarHeight = 56;
-            int availableHeight = this.ClientSize.Height - clientTop - (GRID_MARGIN * 3) - buttonBarHeight;
-            int panelHeight = (availableHeight - GRID_MARGIN) / 2;
-
-            // User panel — top
-            _userPanel.Location = new Point(GRID_MARGIN, clientTop + GRID_MARGIN);
-            _userPanel.Size = new Size(availableWidth, panelHeight);
-
-            // System panel — bottom
-            _systemPanel.Location = new Point(GRID_MARGIN, clientTop + GRID_MARGIN + panelHeight + GRID_MARGIN);
-            _systemPanel.Size = new Size(availableWidth, panelHeight);
-
-            // Position grids inside panels
-            LayoutGridInPanel(_userGrid, _userPanel);
-            LayoutGridInPanel(_systemGrid, _systemPanel);
-
-            // Position Add buttons inside panel header areas (top-right)
-            LayoutAddButton(_btnAddUser, _userPanel);
-            LayoutAddButton(_btnAddSystem, _systemPanel);
-
-            // Export button
-            if (_btnExport != null)
-            {
-                _btnExport.Location = new Point(
-                    this.ClientSize.Width - _btnExport.Width - GRID_MARGIN,
-                    this.ClientSize.Height - _btnExport.Height - GRID_MARGIN);
-            }
-
-            // Toast label
-            if (_toastLabel != null)
-            {
-                _toastLabel.Location = new Point(
-                    this.ClientSize.Width - _toastLabel.Width - GRID_MARGIN - 8,
-                    this.ClientSize.Height - _toastLabel.Height - GRID_MARGIN - 60);
-            }
-        }
-
-        private void LayoutGridInPanel(DataGridView grid, UIPanel panel)
-        {
-            int gridTop = HEADER_HEIGHT + 4;
-            int gridPad = 10;
-            grid.Location = new Point(gridPad, gridTop);
-            grid.Size = new Size(panel.Width - (gridPad * 2), panel.Height - gridTop - gridPad);
-        }
-
-        private void LayoutAddButton(UISymbolButton btn, UIPanel panel)
-        {
-            if (btn == null || panel == null) return;
-            btn.Location = new Point(panel.Width - btn.Width - 12, 4);
-        }
-        #endregion
-
-
-
-        #region ClickToCopy
+        #region GridAndSearchInteraction
         private void Grid_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
@@ -535,54 +510,57 @@ namespace GetEnvironmentVariables
             }
         }
 
-        private void ShowToast(string message)
+        private void Grid_CellMouseDown(object? sender, DataGridViewCellMouseEventArgs e)
         {
-            _toastTimer.Stop();
-            _toastLabel.Text = message;
-            _toastLabel.Visible = true;
-            _toastLabel.BringToFront();
-            _toastTimer.Start();
+            if (e.Button != MouseButtons.Right) return;
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            if (sender is not DataGridView grid) return;
+
+            // Ignore placeholder row when grid has no items
+            object? nameVal = grid.Rows[e.RowIndex].Cells["colName"].Value;
+            if (nameVal != null && nameVal.ToString() == "(none)") return;
+
+            // Select right-clicked cell and store target context
+            grid.ClearSelection();
+            grid.CurrentCell = grid.Rows[e.RowIndex].Cells[e.ColumnIndex];
+            grid.Rows[e.RowIndex].Cells[e.ColumnIndex].Selected = true;
+            _contextTargetGrid = grid;
+            _contextTargetRow = e.RowIndex;
+
+            // Display context menu at cursor position
+            Rectangle cellRect = grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, true);
+            _gridContextMenu.Show(grid, cellRect.Left + e.X, cellRect.Top + e.Y);
+        }
+
+        private void TxtSearch_TextChanged(object? sender, EventArgs e)
+        {
+            _btnClearSearch.Visible = !string.IsNullOrEmpty(_txtSearch.Text);
+            ApplySearchFilter();
         }
         #endregion
 
 
 
-        #region RightClickUpdate
-        private void Grid_CellMouseDown(object? sender, DataGridViewCellMouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Right) return;
-            if (e.RowIndex < 0) return;
-            if (sender is not DataGridView grid) return;
-
-            // Check for the empty placeholder row
-            object? nameVal = grid.Rows[e.RowIndex].Cells["colName"].Value;
-            if (nameVal != null && nameVal.ToString() == "(none)") return;
-
-            // Select the right-clicked row and store context
-            grid.ClearSelection();
-            grid.Rows[e.RowIndex].Selected = true;
-            _contextTargetGrid = grid;
-            _contextTargetRow = e.RowIndex;
-
-            // Show context menu at cursor
-            Rectangle cellRect = grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, true);
-            _gridContextMenu.Show(grid, cellRect.Left + e.X, cellRect.Top + e.Y);
-        }
-
+        #region ContextMenuActions
         private void ContextMenu_UpdateClick(object? sender, EventArgs e)
         {
             if (_contextTargetGrid == null || _contextTargetRow < 0) return;
+            if (_contextTargetRow >= _contextTargetGrid.Rows.Count) return;
 
-            // Get current values from the right-clicked row
+            // Retrieve variable name, value, and scope from selected row
             string currentName = _contextTargetGrid.Rows[_contextTargetRow].Cells["colName"].Value?.ToString() ?? string.Empty;
             string currentValue = _contextTargetGrid.Rows[_contextTargetRow].Cells["colValue"].Value?.ToString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(currentName) || currentName == "(none)") return;
+
             EnvironmentVariableTarget target = ResolveTargetFromGrid(_contextTargetGrid);
 
-            // System scope requires admin elevation
+            // Require admin elevation for System scope modifications
             if (target == EnvironmentVariableTarget.Machine && !EnsureAdminElevation())
+            {
                 return;
+            }
 
-            // Open editor in Update mode
+            // Launch editor dialog (automatically uses RichTextBox layout for Path/PATH)
             using (Form_EditEnvVar editor = new Form_EditEnvVar(
                 EditMode.Update, currentName, currentValue, target))
             {
@@ -590,17 +568,21 @@ namespace GetEnvironmentVariables
                 {
                     try
                     {
+                        this.UseWaitCursor = true;
+                        Cursor.Current = Cursors.WaitCursor;
+
                         ApplyEnvVarUpdate(currentName, editor.ResultName, editor.ResultValue, target);
                         RefreshGridData(target);
                         ShowToast("✓  Updated!");
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show(
-                            $"Failed to update environment variable:\n{ex.Message}",
-                            "Update Error",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error);
+                        MsgBox.Show(ErrorNoExit, $"Failed to update environment variable:\n{ex.Message}");
+                    }
+                    finally
+                    {
+                        this.UseWaitCursor = false;
+                        Cursor.Current = Cursors.Default;
                     }
                 }
             }
@@ -612,11 +594,48 @@ namespace GetEnvironmentVariables
 
             if (nameChanged)
             {
-                // Rename = delete old + create new
+                // Remove old variable name before writing new variable name
                 Environment.SetEnvironmentVariable(oldName, null, target);
             }
 
             Environment.SetEnvironmentVariable(newName, newValue, target);
+        }
+
+        private void ContextMenu_DeleteClick(object? sender, EventArgs e)
+        {
+            if (_contextTargetGrid == null || _contextTargetRow < 0) return;
+            if (_contextTargetRow >= _contextTargetGrid.Rows.Count) return;
+
+            string currentName = _contextTargetGrid.Rows[_contextTargetRow].Cells["colName"].Value?.ToString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(currentName) || currentName == "(none)") return;
+
+            EnvironmentVariableTarget target = ResolveTargetFromGrid(_contextTargetGrid);
+
+            // Require admin elevation for System scope deletions
+            if (target == EnvironmentVariableTarget.Machine && !EnsureAdminElevation())
+            {
+                return;
+            }
+
+            // Immediately delete environment variable without confirmation prompts
+            try
+            {
+                this.UseWaitCursor = true;
+                Cursor.Current = Cursors.WaitCursor;
+
+                Environment.SetEnvironmentVariable(currentName, null, target);
+                RefreshGridData(target);
+                ShowToast("✓  Deleted!");
+            }
+            catch (Exception ex)
+            {
+                MsgBox.Show(ErrorNoExit, $"Failed to delete environment variable:\n{ex.Message}");
+            }
+            finally
+            {
+                this.UseWaitCursor = false;
+                Cursor.Current = Cursors.Default;
+            }
         }
         #endregion
 
@@ -625,9 +644,11 @@ namespace GetEnvironmentVariables
         #region AddNewVariable
         private void HandleAddVariable(EnvironmentVariableTarget target)
         {
-            // System scope requires admin elevation
+            // Require admin elevation for System scope additions
             if (target == EnvironmentVariableTarget.Machine && !EnsureAdminElevation())
+            {
                 return;
+            }
 
             using (Form_EditEnvVar editor = new Form_EditEnvVar(
                 EditMode.Add, string.Empty, string.Empty, target))
@@ -636,17 +657,21 @@ namespace GetEnvironmentVariables
                 {
                     try
                     {
+                        this.UseWaitCursor = true;
+                        Cursor.Current = Cursors.WaitCursor;
+
                         Environment.SetEnvironmentVariable(editor.ResultName, editor.ResultValue, target);
                         RefreshGridData(target);
                         ShowToast("✓  Added!");
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show(
-                            $"Failed to add environment variable:\n{ex.Message}",
-                            "Add Error",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error);
+                        MsgBox.Show(ErrorNoExit, $"Failed to add environment variable:\n{ex.Message}");
+                    }
+                    finally
+                    {
+                        this.UseWaitCursor = false;
+                        Cursor.Current = Cursors.Default;
                     }
                 }
             }
@@ -655,90 +680,12 @@ namespace GetEnvironmentVariables
 
 
 
-        #region AdminElevation
-        private bool EnsureAdminElevation()
-        {
-            if (IsRunningAsAdmin())
-                return true;
-
-            DialogResult result = MessageBox.Show(
-                "Modifying System environment variables requires administrator privileges.\n\n" +
-                "The application will relaunch with elevated permissions.\nAny unsaved work will be preserved in Windows.",
-                "Admin Privileges Required",
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Information);
-
-            if (result != DialogResult.OK)
-            {
-                ShowToast("Elevation cancelled");
-                return false;
-            }
-
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = Application.ExecutablePath,
-                    UseShellExecute = true,
-                    Verb = "runas"
-                };
-
-                Process.Start(psi);
-                Application.Exit();
-                return false; // Won't reach here, but compiler needs it
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                // User declined UAC prompt
-                ShowToast("Elevation cancelled");
-                return false;
-            }
-        }
-
-        private bool IsRunningAsAdmin()
-        {
-            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
-            {
-                WindowsPrincipal principal = new WindowsPrincipal(identity);
-                return principal.IsInRole(WindowsBuiltInRole.Administrator);
-            }
-        }
-        #endregion
-
-
-
         #region ExcelExport
-        private void InitializeExportButton()
-        {
-            _btnExport = new UISymbolButton
-            {
-                Text = "  Export to Excel",
-                Symbol = 61568, // Printer / document icon
-                SymbolSize = 20,
-                Size = new Size(180, 42),
-                Style = UIStyle.Custom,
-                FillColor = Color.FromArgb(48, 52, 78),
-                FillHoverColor = Color.FromArgb(60, 66, 100),
-                FillPressColor = Color.FromArgb(40, 44, 68),
-                RectColor = _userAccent,
-                ForeColor = _textPrimary,
-                SymbolColor = _userAccent,
-                Font = new Font("Segoe UI Semibold", 10f),
-                Radius = 6,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-                Cursor = Cursors.Hand
-            };
-
-            _btnExport.Click += BtnExport_Click;
-            this.Controls.Add(_btnExport);
-            _btnExport.BringToFront();
-        }
-
         private void BtnExport_Click(object? sender, EventArgs e)
         {
             try
             {
-                // Ensure output directory exists
+                // Ensure target Excel output directory exists
                 if (!Directory.Exists(_directories.ExcelOutputs))
                 {
                     Directory.CreateDirectory(_directories.ExcelOutputs);
@@ -767,11 +714,7 @@ namespace GetEnvironmentVariables
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"Failed to export Excel file:\n{ex.Message}",
-                    "Export Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                MsgBox.Show(ErrorNoExit, $"Failed to export Excel file:\r\n{ex.Message}");
             }
         }
 
@@ -779,7 +722,7 @@ namespace GetEnvironmentVariables
         {
             ExcelWorksheet ws = package.Workbook.Worksheets.Add(sheetName);
 
-            // Color palette
+            // Sheet color palette
             Color darkBg = Color.FromArgb(30, 30, 46);
             Color headerBg = Color.FromArgb(28, 28, 42);
             Color rowBg = Color.FromArgb(40, 42, 60);
@@ -871,14 +814,10 @@ namespace GetEnvironmentVariables
                 }
             }
 
-            // Column widths
+            // Column widths and sheet properties
             ws.Column(1).Width = 36;
             ws.Column(2).Width = 90;
-
-            // Freeze panes below header
             ws.View.FreezePanes(dataStartRow, 1);
-
-            // Sheet tab color
             ws.TabColor = accentColor;
         }
         #endregion
@@ -886,11 +825,247 @@ namespace GetEnvironmentVariables
 
 
         #region HelperMethods
+        private void RefreshGridData(EnvironmentVariableTarget target)
+        {
+            if (target == EnvironmentVariableTarget.User)
+            {
+                _userVars = GetScopedEnvVars(EnvironmentVariableTarget.User);
+            }
+            else
+            {
+                _systemVars = GetScopedEnvVars(EnvironmentVariableTarget.Machine);
+            }
+
+            ApplySearchFilter();
+        }
+
+        private List<EnvVarEntry> GetScopedEnvVars(EnvironmentVariableTarget target)
+        {
+            List<EnvVarEntry> results = new();
+
+            try
+            {
+                IDictionary rawVars = Environment.GetEnvironmentVariables(target);
+
+                foreach (DictionaryEntry entry in rawVars)
+                {
+                    string name = entry.Key?.ToString() ?? string.Empty;
+                    string value = entry.Value?.ToString() ?? string.Empty;
+
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        results.Add(new EnvVarEntry(name, value));
+                    }
+                }
+
+                results.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                MsgBox.Show(Warning, $"Failed to retrieve {target} environment variables:\n{ex.Message}");
+            }
+
+            return results;
+        }
+
+        private void ApplySearchFilter()
+        {
+            string query = _txtSearch?.Text?.Trim() ?? string.Empty;
+
+            List<EnvVarEntry> filteredUser = FilterVarList(_userVars, query);
+            List<EnvVarEntry> filteredSystem = FilterVarList(_systemVars, query);
+
+            _userPanel.Text = string.IsNullOrEmpty(query)
+                ? $"  User Environment Variables ({_userVars.Count})"
+                : $"  User Environment Variables ({filteredUser.Count} / {_userVars.Count})";
+
+            _systemPanel.Text = string.IsNullOrEmpty(query)
+                ? $"  System Environment Variables ({_systemVars.Count})"
+                : $"  System Environment Variables ({filteredSystem.Count} / {_systemVars.Count})";
+
+            PopulateGrid(_userGrid, filteredUser, "User");
+            PopulateGrid(_systemGrid, filteredSystem, "System");
+        }
+
+        private List<EnvVarEntry> FilterVarList(List<EnvVarEntry> source, string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return source;
+            }
+
+            return source
+                .Where(v => v.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                         || v.Value.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        private void PopulateGrid(DataGridView grid, List<EnvVarEntry> vars, string scope)
+        {
+            int previousScrollRow = grid.FirstDisplayedScrollingRowIndex;
+
+            grid.SuspendLayout();
+            try
+            {
+                grid.Rows.Clear();
+
+                if (vars.Count == 0)
+                {
+                    int idx = grid.Rows.Add("(none)", $"No matching {scope} environment variables detected.");
+                    grid.Rows[idx].DefaultCellStyle.ForeColor = _textSecondary;
+                    grid.Rows[idx].DefaultCellStyle.Font = _gridEmptyFont;
+                    return;
+                }
+
+                foreach (EnvVarEntry entry in vars)
+                {
+                    int rowIndex = grid.Rows.Add(entry.Name, entry.Value);
+                    DataGridViewRow row = grid.Rows[rowIndex];
+                    row.Cells[0].ToolTipText = CELL_TOOLTIP_TEXT;
+                    row.Cells[1].ToolTipText = CELL_TOOLTIP_TEXT;
+                }
+
+                // Restore scroll offset when refreshing existing list
+                if (previousScrollRow >= 0 && previousScrollRow < grid.Rows.Count)
+                {
+                    grid.FirstDisplayedScrollingRowIndex = previousScrollRow;
+                }
+            }
+            finally
+            {
+                grid.ResumeLayout();
+            }
+        }
+
+        private void LayoutPanels()
+        {
+            if (_userPanel == null || _systemPanel == null) return;
+
+            int clientTop = this.TitleHeight > 0 ? this.TitleHeight : 35;
+            int availableWidth = this.ClientSize.Width - (GRID_MARGIN * 2);
+            int buttonBarHeight = 56;
+            int availableHeight = this.ClientSize.Height - clientTop - (GRID_MARGIN * 3) - buttonBarHeight;
+            int panelHeight = (availableHeight - GRID_MARGIN) / 2;
+
+            // User panel at top
+            _userPanel.Location = new Point(GRID_MARGIN, clientTop + GRID_MARGIN);
+            _userPanel.Size = new Size(availableWidth, panelHeight);
+
+            // System panel below User panel
+            _systemPanel.Location = new Point(GRID_MARGIN, clientTop + GRID_MARGIN + panelHeight + GRID_MARGIN);
+            _systemPanel.Size = new Size(availableWidth, panelHeight);
+
+            // Position grids inside panels
+            LayoutGridInPanel(_userGrid, _userPanel);
+            LayoutGridInPanel(_systemGrid, _systemPanel);
+
+            // Position Add buttons in top-right header of each panel
+            LayoutAddButton(_btnAddUser, _userPanel);
+            LayoutAddButton(_btnAddSystem, _systemPanel);
+
+            // Position bottom bar controls (Search box, Clear button, Export button)
+            int bottomBarY = this.ClientSize.Height - 42 - GRID_MARGIN;
+            if (_txtSearch != null)
+            {
+                _txtSearch.Location = new Point(GRID_MARGIN, bottomBarY + 2);
+            }
+
+            if (_btnClearSearch != null && _txtSearch != null)
+            {
+                _btnClearSearch.Location = new Point(_txtSearch.Right + 8, bottomBarY + 2);
+            }
+
+            if (_btnExport != null)
+            {
+                _btnExport.Location = new Point(
+                    this.ClientSize.Width - _btnExport.Width - GRID_MARGIN,
+                    bottomBarY);
+            }
+
+            // Position floating toast notification above Export button
+            if (_toastLabel != null)
+            {
+                _toastLabel.Location = new Point(
+                    this.ClientSize.Width - _toastLabel.Width - GRID_MARGIN - 8,
+                    this.ClientSize.Height - _toastLabel.Height - GRID_MARGIN - 60);
+            }
+        }
+
+        private void LayoutGridInPanel(DataGridView grid, UIPanel panel)
+        {
+            int gridTop = HEADER_HEIGHT + 4;
+            int gridPad = 10;
+            grid.Location = new Point(gridPad, gridTop);
+            grid.Size = new Size(panel.Width - (gridPad * 2), panel.Height - gridTop - gridPad);
+        }
+
+        private void LayoutAddButton(UISymbolButton btn, UIPanel panel)
+        {
+            if (btn == null || panel == null) return;
+            btn.Location = new Point(panel.Width - btn.Width - 12, 4);
+        }
+
         private EnvironmentVariableTarget ResolveTargetFromGrid(DataGridView grid)
         {
             return grid == _userGrid
                 ? EnvironmentVariableTarget.User
                 : EnvironmentVariableTarget.Machine;
+        }
+
+        private bool EnsureAdminElevation()
+        {
+            if (IsRunningAsAdmin())
+            {
+                return true;
+            }
+
+            DialogResult result = MsgBox.Show(Question,
+                "Modifying System environment variables requires administrator privileges.\r\n\r\n" +
+                "The application will relaunch with elevated permissions.\r\nAny unsaved work will be preserved in Windows.",
+                "Admin Privileges Required");
+            if (result != DialogResult.OK)
+            {
+                ShowToast("Elevation cancelled");
+                return false;
+            }
+
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = Application.ExecutablePath,
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
+
+                Process.Start(psi);
+                Application.Exit();
+                return false;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // User declined UAC elevation prompt
+                ShowToast("Elevation cancelled");
+                return false;
+            }
+        }
+
+        private bool IsRunningAsAdmin()
+        {
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+            {
+                WindowsPrincipal principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+        }
+
+        private void ShowToast(string message)
+        {
+            _toastTimer.Stop();
+            _toastLabel.Text = message;
+            _toastLabel.Visible = true;
+            _toastLabel.BringToFront();
+            _toastTimer.Start();
         }
         #endregion
     }
@@ -910,19 +1085,26 @@ namespace GetEnvironmentVariables
         #region ClassConfig
         const int MAX_NAME_LENGTH = 255;
         const int MAX_VALUE_LENGTH = 32767;
+        const int STANDARD_DIALOG_WIDTH = 480;
+        const int STANDARD_DIALOG_HEIGHT = 290;
+        const int PATH_DIALOG_WIDTH = 680;
+        const int PATH_DIALOG_HEIGHT = 520;
 
-        private static readonly char[] INVALID_NAME_CHARS = { '=', '%', '<', '>', '^', '&', '|', ':' };
+        private static readonly char[] _invalidNameChars = { '=', '%', '<', '>', '^', '&', '|', ':' };
 
-        private readonly EditMode _mode;
-        private readonly string _originalName;
-        private readonly string _originalValue;
-        private readonly EnvironmentVariableTarget _target;
+        private EditMode _mode { get; }
+        private string _originalName { get; }
+        private string _originalValue { get; }
+        private EnvironmentVariableTarget _target { get; }
+        private bool _isPathVar { get; }
 
-        private UITextBox _txtName;
-        private UITextBox _txtValue;
-        private UIButton _btnAction;
-        private UIButton _btnCancel;
-        private Label _lblError;
+        private UITextBox _txtName { get; set; }
+        private UITextBox _txtValue { get; set; }
+        private UIPanel _rtbBorderPanel { get; set; }
+        private RichTextBox _rtbPathValue { get; set; }
+        private UIButton _btnAction { get; set; }
+        private UIButton _btnCancel { get; set; }
+        private Label _lblError { get; set; }
 
         public string ResultName { get; private set; } = string.Empty;
         public string ResultValue { get; private set; } = string.Empty;
@@ -937,6 +1119,7 @@ namespace GetEnvironmentVariables
             _originalName = currentName;
             _originalValue = currentValue;
             _target = target;
+            _isPathVar = string.Equals(currentName, "Path", StringComparison.OrdinalIgnoreCase);
 
             InitializeDialog();
             InitializeControls();
@@ -946,18 +1129,23 @@ namespace GetEnvironmentVariables
         {
             string scopeLabel = _target == EnvironmentVariableTarget.User ? "User" : "System";
             string actionLabel = _mode == EditMode.Update ? "Update" : "Add";
+            string pathSuffix = _isPathVar ? " (Path List Editor)" : string.Empty;
 
-            this.Text = $"{actionLabel} {scopeLabel} Environment Variable";
-            this.Size = new Size(480, 290);
-            this.MinimumSize = this.Size;
-            this.MaximumSize = new Size(600, 290);
+            int dialogWidth = _isPathVar ? PATH_DIALOG_WIDTH : STANDARD_DIALOG_WIDTH;
+            int dialogHeight = _isPathVar ? PATH_DIALOG_HEIGHT : STANDARD_DIALOG_HEIGHT;
+
+            this.Text = $"{actionLabel} {scopeLabel} Environment Variable{pathSuffix}";
+            this.Size = new Size(dialogWidth, dialogHeight);
+            this.MinimumSize = _isPathVar ? new Size(560, 400) : this.Size;
+            this.MaximumSize = _isPathVar ? new Size(1200, 900) : new Size(640, STANDARD_DIALOG_HEIGHT);
             this.StartPosition = FormStartPosition.CenterParent;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
+            this.FormBorderStyle = _isPathVar ? FormBorderStyle.Sizable : FormBorderStyle.FixedDialog;
+            this.MaximizeBox = _isPathVar;
             this.MinimizeBox = false;
             this.ShowInTaskbar = false;
+            this.KeyPreview = true;
 
-            // Sunny.UI theming
+            // Sunny.UI dark theming
             this.Style = UIStyle.DarkBlue;
             this.BackColor = Color.FromArgb(30, 30, 46);
             this.RectColor = Color.FromArgb(58, 60, 82);
@@ -968,6 +1156,16 @@ namespace GetEnvironmentVariables
             this.TitleFont = new Font("Segoe UI Semibold", 10f);
             this.AllowShowTitle = true;
             this.ShowTitle = true;
+
+            // Allow Escape key to cancel dialog cleanly
+            this.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    this.DialogResult = DialogResult.Cancel;
+                    this.Close();
+                }
+            };
         }
 
         private void InitializeControls()
@@ -1005,7 +1203,8 @@ namespace GetEnvironmentVariables
                 Style = UIStyle.Custom,
                 FillColor = Color.FromArgb(40, 42, 60),
                 ForeColor = Color.FromArgb(230, 230, 240),
-                RectColor = Color.FromArgb(58, 60, 82)
+                RectColor = Color.FromArgb(58, 60, 82),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             this.Controls.Add(_txtName);
             currentY += 40;
@@ -1013,53 +1212,95 @@ namespace GetEnvironmentVariables
             // Value label
             UILabel lblValue = new UILabel
             {
-                Text = "Value:",
+                Text = _isPathVar ? "Value (one path per line — semicolons normalized automatically):" : "Value:",
                 Location = new Point(labelX, currentY),
                 Size = new Size(fieldWidth, 20),
                 Font = new Font("Segoe UI Semibold", 9.5f),
                 ForeColor = accentColor,
-                Style = UIStyle.Custom
+                Style = UIStyle.Custom,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             this.Controls.Add(lblValue);
-            currentY += 22;
+            currentY += 24;
 
-            // Value textbox
-            _txtValue = new UITextBox
+            // Action button metrics calculated from bottom edge
+            string actionText = _mode == EditMode.Update ? "Update" : "Add";
+            int btnWidth = 94;
+            int btnHeight = 34;
+            int btnSpacing = 10;
+            int bottomMargin = 18;
+            int btnY = this.ClientSize.Height - btnHeight - bottomMargin;
+            int btnRightEdge = fieldX + fieldWidth;
+
+            if (_isPathVar)
             {
-                Text = _originalValue,
-                Location = new Point(fieldX, currentY),
-                Size = new Size(fieldWidth, 32),
-                Font = new Font("Cascadia Code", 10f),
-                Style = UIStyle.Custom,
-                FillColor = Color.FromArgb(40, 42, 60),
-                ForeColor = Color.FromArgb(230, 230, 240),
-                RectColor = Color.FromArgb(58, 60, 82)
-            };
-            this.Controls.Add(_txtValue);
-            currentY += 40;
+                // Multi-line RichTextBox at bottom for Path / PATH variable values
+                int rtbHeight = btnY - currentY - 14;
 
-            // Error label (hidden by default)
+                _rtbBorderPanel = new UIPanel
+                {
+                    Location = new Point(fieldX, currentY),
+                    Size = new Size(fieldWidth, rtbHeight),
+                    Style = UIStyle.Custom,
+                    FillColor = Color.FromArgb(40, 42, 60),
+                    RectColor = Color.FromArgb(58, 60, 82),
+                    Radius = 4,
+                    RadiusSides = UICornerRadiusSides.All,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                };
+
+                _rtbPathValue = new RichTextBox
+                {
+                    Location = new Point(6, 6),
+                    Size = new Size(fieldWidth - 12, rtbHeight - 12),
+                    BorderStyle = BorderStyle.None,
+                    BackColor = Color.FromArgb(40, 42, 60),
+                    ForeColor = Color.FromArgb(230, 230, 240),
+                    Font = new Font("Cascadia Code", 9.5f),
+                    WordWrap = false,
+                    DetectUrls = false,
+                    ScrollBars = RichTextBoxScrollBars.Both,
+                    Text = NormalizePathForDisplay(_originalValue),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                };
+
+                _rtbBorderPanel.Controls.Add(_rtbPathValue);
+                this.Controls.Add(_rtbBorderPanel);
+            }
+            else
+            {
+                // Standard single-line UITextBox for general environment variables
+                _txtValue = new UITextBox
+                {
+                    Text = _originalValue,
+                    Location = new Point(fieldX, currentY),
+                    Size = new Size(fieldWidth, 32),
+                    Font = new Font("Cascadia Code", 10f),
+                    Style = UIStyle.Custom,
+                    FillColor = Color.FromArgb(40, 42, 60),
+                    ForeColor = Color.FromArgb(230, 230, 240),
+                    RectColor = Color.FromArgb(58, 60, 82),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                };
+                this.Controls.Add(_txtValue);
+            }
+
+            // Validation error label
             _lblError = new Label
             {
                 AutoSize = false,
-                Size = new Size(fieldWidth - 170, 20),
-                Location = new Point(fieldX, currentY + 6),
+                Size = new Size(fieldWidth - (btnWidth * 2) - btnSpacing - 12, 24),
+                Location = new Point(fieldX, btnY + 6),
                 Font = new Font("Segoe UI", 8.5f),
                 ForeColor = Color.FromArgb(255, 85, 85),
                 BackColor = Color.Transparent,
                 Text = string.Empty,
-                Visible = false
+                Visible = false,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
             this.Controls.Add(_lblError);
 
-            // Action button (Update or Add)
-            string actionText = _mode == EditMode.Update ? "Update" : "Add";
-            int btnWidth = 90;
-            int btnHeight = 34;
-            int btnSpacing = 10;
-            int btnY = currentY;
-            int btnRightEdge = fieldX + fieldWidth;
-
+            // Cancel button
             _btnCancel = new UIButton
             {
                 Text = "Cancel",
@@ -1073,11 +1314,17 @@ namespace GetEnvironmentVariables
                 ForeColor = Color.FromArgb(200, 200, 210),
                 Font = new Font("Segoe UI Semibold", 9.5f),
                 Radius = 5,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
                 Cursor = Cursors.Hand
             };
-            _btnCancel.Click += (s, e) => { this.DialogResult = DialogResult.Cancel; this.Close(); };
+            _btnCancel.Click += (s, e) =>
+            {
+                this.DialogResult = DialogResult.Cancel;
+                this.Close();
+            };
             this.Controls.Add(_btnCancel);
 
+            // Primary action button (Update or Add)
             _btnAction = new UIButton
             {
                 Text = actionText,
@@ -1091,10 +1338,24 @@ namespace GetEnvironmentVariables
                 ForeColor = Color.White,
                 Font = new Font("Segoe UI Semibold", 9.5f),
                 Radius = 5,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
                 Cursor = Cursors.Hand
             };
             _btnAction.Click += BtnAction_Click;
             this.Controls.Add(_btnAction);
+        }
+
+        private string NormalizePathForDisplay(string rawValue)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return string.Empty;
+            }
+
+            // Replace every semicolon delimiter with Environment.NewLine for line-by-line editing
+            return rawValue
+                .TrimEnd(';')
+                .Replace(";", Environment.NewLine);
         }
         #endregion
 
@@ -1104,7 +1365,9 @@ namespace GetEnvironmentVariables
         private void BtnAction_Click(object? sender, EventArgs e)
         {
             string name = _txtName.Text?.Trim() ?? string.Empty;
-            string value = _txtValue.Text?.Trim() ?? string.Empty;
+            string value = _isPathVar
+                ? CollapsePathFromDisplay(_rtbPathValue.Text)
+                : (_txtValue.Text?.Trim() ?? string.Empty);
 
             // Validate name is not empty
             if (string.IsNullOrWhiteSpace(name))
@@ -1118,12 +1381,13 @@ namespace GetEnvironmentVariables
             if (string.IsNullOrWhiteSpace(value))
             {
                 ShowError("Variable value cannot be empty.");
-                _txtValue.Focus();
+                if (_isPathVar) _rtbPathValue.Focus();
+                else _txtValue.Focus();
                 return;
             }
 
             // Validate name does not contain invalid characters
-            foreach (char c in INVALID_NAME_CHARS)
+            foreach (char c in _invalidNameChars)
             {
                 if (name.Contains(c))
                 {
@@ -1145,7 +1409,8 @@ namespace GetEnvironmentVariables
             if (value.Length > MAX_VALUE_LENGTH)
             {
                 ShowError($"Value cannot exceed {MAX_VALUE_LENGTH:N0} characters.");
-                _txtValue.Focus();
+                if (_isPathVar) _rtbPathValue.Focus();
+                else _txtValue.Focus();
                 return;
             }
 
@@ -1157,11 +1422,13 @@ namespace GetEnvironmentVariables
                 return;
             }
 
-            // Update mode: check for actual changes
+            bool nameChanged = !string.Equals(_originalName, name, StringComparison.OrdinalIgnoreCase);
+
+            // Update mode: verify changes exist
             if (_mode == EditMode.Update)
             {
-                bool nameChanged = !string.Equals(_originalName, name, StringComparison.OrdinalIgnoreCase);
-                bool valueChanged = !string.Equals(_originalValue, value, StringComparison.Ordinal);
+                string baselineValue = _isPathVar ? CollapsePathFromDisplay(_originalValue) : _originalValue;
+                bool valueChanged = !string.Equals(baselineValue, value, StringComparison.Ordinal);
 
                 if (!nameChanged && !valueChanged)
                 {
@@ -1170,8 +1437,8 @@ namespace GetEnvironmentVariables
                 }
             }
 
-            // Add mode: check if variable already exists in this scope
-            if (_mode == EditMode.Add)
+            // Prevent overwriting an existing variable when adding or renaming
+            if (_mode == EditMode.Add || (_mode == EditMode.Update && nameChanged))
             {
                 string? existing = Environment.GetEnvironmentVariable(name, _target);
                 if (existing != null)
@@ -1182,11 +1449,25 @@ namespace GetEnvironmentVariables
                 }
             }
 
-            // All validation passed
+            // Commit validated result
             ResultName = name;
             ResultValue = value;
             this.DialogResult = DialogResult.OK;
             this.Close();
+        }
+
+        private string CollapsePathFromDisplay(string multilineValue)
+        {
+            if (string.IsNullOrWhiteSpace(multilineValue))
+            {
+                return string.Empty;
+            }
+
+            // Collapse newline-separated paths back into a clean semicolon-delimited string
+            string[] segments = multilineValue
+                .Split(new[] { Environment.NewLine, "\n", "\r", ";" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            return string.Join(";", segments);
         }
 
         private void ShowError(string message)
@@ -1203,16 +1484,25 @@ namespace GetEnvironmentVariables
     #region DarkMenuRendererClass
     public class DarkMenuRenderer : ToolStripProfessionalRenderer
     {
-        private readonly Color _borderColor;
-        private readonly Color _hoverColor;
+        #region RendererConfig
+        private Color _borderColor { get; }
+        private Color _hoverColor { get; }
+        #endregion
 
+
+
+        #region RendererConstructor
         public DarkMenuRenderer(Color borderColor, Color hoverColor)
             : base(new DarkColorTable(borderColor))
         {
             _borderColor = borderColor;
             _hoverColor = hoverColor;
         }
+        #endregion
 
+
+
+        #region PaintOverrides
         protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
         {
             if (e.Item.Selected)
@@ -1235,16 +1525,13 @@ namespace GetEnvironmentVariables
                 e.Graphics.DrawRectangle(pen, 0, 0, e.AffectedBounds.Width - 1, e.AffectedBounds.Height - 1);
             }
         }
+        #endregion
     }
 
     public class DarkColorTable : ProfessionalColorTable
     {
-        private readonly Color _borderColor;
-
-        public DarkColorTable(Color borderColor)
-        {
-            _borderColor = borderColor;
-        }
+        #region ColorTableProperties
+        private Color _borderColor { get; }
 
         public override Color MenuBorder => _borderColor;
         public override Color MenuItemBorder => Color.Transparent;
@@ -1254,6 +1541,16 @@ namespace GetEnvironmentVariables
         public override Color ImageMarginGradientEnd => Color.FromArgb(40, 42, 60);
         public override Color SeparatorDark => Color.FromArgb(58, 60, 82);
         public override Color SeparatorLight => Color.FromArgb(58, 60, 82);
+        #endregion
+
+
+
+        #region ColorTableConstructor
+        public DarkColorTable(Color borderColor)
+        {
+            _borderColor = borderColor;
+        }
+        #endregion
     }
     #endregion
 
@@ -1262,14 +1559,20 @@ namespace GetEnvironmentVariables
     #region EnvVarEntryModel
     public class EnvVarEntry
     {
+        #region ModelProperties
         public string Name { get; }
         public string Value { get; }
+        #endregion
 
+
+
+        #region ModelConstructor
         public EnvVarEntry(string name, string value)
         {
             Name = name;
             Value = value;
         }
+        #endregion
     }
     #endregion
 }

@@ -12,20 +12,25 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Excel Outputs\**" />
     <Compile Remove="ExcelOutputs\**" />
     <Compile Remove="JSON Outputs\**" />
+    <EmbeddedResource Remove="Excel Outputs\**" />
     <EmbeddedResource Remove="ExcelOutputs\**" />
     <EmbeddedResource Remove="JSON Outputs\**" />
+    <None Remove="Excel Outputs\**" />
     <None Remove="ExcelOutputs\**" />
     <None Remove="JSON Outputs\**" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Excel Outputs\" />
     <Folder Include="Properties\PublishProfiles\" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DanMarDev.DuplicateInstanceCheck" Version="1.1.2" />
+    <PackageReference Include="DanMarDev.WakeDrives" Version="2.0.0" />
+    <PackageReference Include="DanMarDev.WinForms_CustomTools" Version="1.1.0" />
     <PackageReference Include="EPPlus" Version="8.7.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
