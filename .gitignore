@@ -6,6 +6,12 @@
 # Local AppSettings JSON File
 appsettings.Local.json
 
+# Excel Files
+*.xls
+*.xlsx
+*.xlsb
+*.xlsm
+
 # User-specific files
 *.rsuser
 *.suo
