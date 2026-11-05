@@ -3,8 +3,8 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
-# Local AppSettings JSON File
-appsettings.Local.json
+# Temporary Reference Files
+_TemporaryImageReference/
 
 # Excel Files
 *.xls

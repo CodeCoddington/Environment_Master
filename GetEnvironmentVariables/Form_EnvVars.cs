@@ -1,7 +1,6 @@
 using DanMarDev.DuplicateInstanceCheck;
 using DanMarDev.WakeDrives;
 using DanMarDev.WinForms_CustomTools;
-using Microsoft.Extensions.Configuration;
 using OfficeOpenXml;
 using OfficeOpenXml.Style;
 using Sunny.UI;
@@ -15,54 +14,6 @@ using static DanMarDev.WinForms_CustomTools.MsgBoxType;
 
 namespace GetEnvironmentVariables
 {
-    #region DirectoryContextClass
-    public class DirectoryContext
-    {
-        #region DirectoryProperties
-        public string ExcelOutputs { get; }
-        public string MachineName => Environment.MachineName;
-        #endregion
-
-
-
-        #region DirectoryContextConstructor
-        public DirectoryContext()
-        {
-            // Identify runtime environment context
-            string environment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production";
-
-            // Build configuration cascade without unnecessary file watchers
-            IConfiguration config = new ConfigurationBuilder()
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-                .AddJsonFile($"appsettings.{MachineName}.json", optional: true)
-                .AddJsonFile($"appsettings.{environment}.json", optional: true)
-                .AddJsonFile("appsettings.Local.json", optional: true)
-                .Build();
-
-            // Resolve and assign output directory path
-            ExcelOutputs = ResolvePath(config["Directories:Excel"]);
-        }
-
-        private string ResolvePath(string? configuredPath)
-        {
-            if (string.IsNullOrWhiteSpace(configuredPath))
-            {
-                throw new InvalidOperationException("A required directory path is missing from the appsettings configuration.");
-            }
-
-            // Return rooted path directly or combine relative path with base directory
-            return Path.IsPathRooted(configuredPath)
-                ? configuredPath
-                : Path.Combine(AppContext.BaseDirectory, configuredPath);
-        }
-        #endregion
-    }
-    #endregion
-
-
-
-    #region FormClass
     public class Form_EnvVars : UIForm
     {
         #region ClassConfig
@@ -74,7 +25,10 @@ namespace GetEnvironmentVariables
         const int NAME_COLUMN_WIDTH = 260;
         const string CELL_TOOLTIP_TEXT = "Left-click to copy  |  Right-click to update or delete";
 
-        private DirectoryContext _directories { get; set; }
+        public readonly string MachineName = Environment.MachineName;
+        public readonly string TemplateXlsmFilePath = @"D:\My Drive\_GlobalSync_Programming\Excel & Sheets\EnvVars\_Template\EnvVars_Template.xlsm";
+        public readonly string XlsmOutputDirectory = @"D:\My Drive\_GlobalSync_Programming\Excel & Sheets\EnvVars\Exports";
+
         private Color _bgDark { get; } = Color.FromArgb(30, 30, 46);
         private Color _panelBg { get; } = Color.FromArgb(36, 36, 54);
         private Color _userAccent { get; } = Color.FromArgb(0, 188, 212);
@@ -116,8 +70,6 @@ namespace GetEnvironmentVariables
         #region FormConstructor
         public Form_EnvVars()
         {
-            _directories = new DirectoryContext();
-
             InitializeForm();
             InitializeToast();
             InitializeContextMenu();
@@ -450,10 +402,9 @@ namespace GetEnvironmentVariables
             }
 
             // Wake corporate UNC G: drive when running outside home dev machine
-            if (_directories.MachineName != "VJ_MUSICDEV")
+            if (MachineName != "VJ_MUSICDEV")
             {
-                var tryWakeG = WakeDrives.Wake_GDrive();
-                if (!tryWakeG.DriveAwake)
+                if (!WakeDrives.Wake_GDrive().DriveAwake)
                 {
                     MsgBox.Show(ErrorExit, "G: Drive is inaccessible.");
                     Application.Exit();
@@ -685,22 +636,30 @@ namespace GetEnvironmentVariables
         {
             try
             {
-                // Ensure target Excel output directory exists
-                if (!Directory.Exists(_directories.ExcelOutputs))
+                // Verify Excel template exists before proceeding
+                if (!File.Exists(TemplateXlsmFilePath))
                 {
-                    Directory.CreateDirectory(_directories.ExcelOutputs);
+                    MsgBox.Show(ErrorNoExit, $"Excel template file not found:\r\n{TemplateXlsmFilePath}");
+                    return;
+                }
+
+                // Ensure target Excel output directory exists
+                if (!Directory.Exists(XlsmOutputDirectory))
+                {
+                    Directory.CreateDirectory(XlsmOutputDirectory);
                 }
 
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                string filePath = Path.Combine(_directories.ExcelOutputs, $"EnvVars_{timestamp}.xlsx");
+                string filePath = Path.Combine(XlsmOutputDirectory, $"EnvVars_{MachineName}_{timestamp}.xlsm");
+                FileInfo templateInfo = new FileInfo(TemplateXlsmFilePath);
+                FileInfo outputInfo = new FileInfo(filePath);
 
-                using (ExcelPackage package = new ExcelPackage())
+                using (ExcelPackage package = new ExcelPackage(outputInfo, templateInfo))
                 {
-                    WriteEnvVarSheet(package, "User Variables", _userVars, _userAccent);
-                    WriteEnvVarSheet(package, "System Variables", _systemVars, _systemAccent);
+                    WriteEnvVarSheet(package, "User Variables", _userVars);
+                    WriteEnvVarSheet(package, "System Variables", _systemVars);
 
-                    FileInfo fileInfo = new FileInfo(filePath);
-                    package.SaveAs(fileInfo);
+                    package.Save();
 
                     ProcessStartInfo psi = new ProcessStartInfo
                     {
@@ -718,107 +677,50 @@ namespace GetEnvironmentVariables
             }
         }
 
-        private void WriteEnvVarSheet(ExcelPackage package, string sheetName, List<EnvVarEntry> vars, Color accentColor)
+        private void WriteEnvVarSheet(ExcelPackage package, string sheetName, List<EnvVarEntry> vars)
         {
-            ExcelWorksheet ws = package.Workbook.Worksheets.Add(sheetName);
+            ExcelWorksheet ws = package.Workbook.Worksheets[sheetName];
+            int lastTemplateRow = ws.Dimension.End.Row;
 
-            // Sheet color palette
-            Color darkBg = Color.FromArgb(30, 30, 46);
-            Color headerBg = Color.FromArgb(28, 28, 42);
-            Color rowBg = Color.FromArgb(40, 42, 60);
-            Color altRowBg = Color.FromArgb(48, 50, 72);
-            Color textWhite = Color.FromArgb(230, 230, 240);
-            Color borderColor = Color.FromArgb(58, 60, 82);
+            // Populate machine name and export timestamp in template header
+            ws.Cells[1, 2].Value = $"{ws.Cells[1, 2].Text}{MachineName}";
+            ws.Cells[2, 2].Value = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-            // Title row
-            ws.Cells[1, 1].Value = sheetName;
-            ws.Cells[1, 1, 1, 2].Merge = true;
-
-            using (ExcelRange titleRange = ws.Cells[1, 1, 1, 2])
-            {
-                titleRange.Style.Font.Size = 14;
-                titleRange.Style.Font.Bold = true;
-                titleRange.Style.Font.Color.SetColor(accentColor);
-                titleRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                titleRange.Style.Fill.BackgroundColor.SetColor(darkBg);
-                titleRange.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-            }
-
-            ws.Row(1).Height = 32;
-
-            // Timestamp row
-            ws.Cells[2, 1].Value = "Exported:";
-            ws.Cells[2, 2].Value = DateTime.Now.ToString("yyyy-MM-dd  HH:mm:ss");
-            ws.Cells[2, 1, 2, 2].Style.Font.Size = 9;
-            ws.Cells[2, 1, 2, 2].Style.Font.Italic = true;
-            ws.Cells[2, 1, 2, 2].Style.Font.Color.SetColor(Color.FromArgb(140, 140, 160));
-            ws.Cells[2, 1, 2, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            ws.Cells[2, 1, 2, 2].Style.Fill.BackgroundColor.SetColor(darkBg);
-            ws.Row(2).Height = 20;
-
-            // Header row
-            int headerRow = 3;
-            ws.Cells[headerRow, 1].Value = "Name";
-            ws.Cells[headerRow, 2].Value = "Value";
-
-            using (ExcelRange hdrRange = ws.Cells[headerRow, 1, headerRow, 2])
-            {
-                hdrRange.Style.Font.Bold = true;
-                hdrRange.Style.Font.Size = 11;
-                hdrRange.Style.Font.Color.SetColor(accentColor);
-                hdrRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                hdrRange.Style.Fill.BackgroundColor.SetColor(headerBg);
-                hdrRange.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                hdrRange.Style.Border.Bottom.Style = ExcelBorderStyle.Medium;
-                hdrRange.Style.Border.Bottom.Color.SetColor(accentColor);
-            }
-
-            ws.Row(headerRow).Height = 28;
-
-            // Data rows
+            // Write environment variable entries starting at row 4
             int dataStartRow = 4;
+            int lastWriteRow = dataStartRow - 1;
 
             if (vars.Count == 0)
             {
                 ws.Cells[dataStartRow, 1].Value = "(none)";
                 ws.Cells[dataStartRow, 2].Value = "No environment variables detected.";
-                ws.Cells[dataStartRow, 1, dataStartRow, 2].Style.Font.Italic = true;
-                ws.Cells[dataStartRow, 1, dataStartRow, 2].Style.Font.Color.SetColor(Color.FromArgb(140, 140, 160));
-                ws.Cells[dataStartRow, 1, dataStartRow, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                ws.Cells[dataStartRow, 1, dataStartRow, 2].Style.Fill.BackgroundColor.SetColor(rowBg);
+                lastWriteRow = dataStartRow;
             }
             else
             {
                 for (int i = 0; i < vars.Count; i++)
                 {
                     int row = dataStartRow + i;
-                    bool isAlt = i % 2 == 1;
-                    Color bg = isAlt ? altRowBg : rowBg;
-
                     ws.Cells[row, 1].Value = vars[i].Name;
                     ws.Cells[row, 2].Value = vars[i].Value;
-
-                    using (ExcelRange dataRange = ws.Cells[row, 1, row, 2])
-                    {
-                        dataRange.Style.Font.Size = 10;
-                        dataRange.Style.Font.Name = "Cascadia Code";
-                        dataRange.Style.Font.Color.SetColor(textWhite);
-                        dataRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                        dataRange.Style.Fill.BackgroundColor.SetColor(bg);
-                        dataRange.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                        dataRange.Style.Border.Bottom.Style = ExcelBorderStyle.Hair;
-                        dataRange.Style.Border.Bottom.Color.SetColor(borderColor);
-                    }
-
-                    ws.Row(row).Height = 22;
+                    lastWriteRow = row;
                 }
             }
 
-            // Column widths and sheet properties
-            ws.Column(1).Width = 36;
-            ws.Column(2).Width = 90;
-            ws.View.FreezePanes(dataStartRow, 1);
-            ws.TabColor = accentColor;
+            // Clear borders and apply static background fill to unused template rows
+            if (lastWriteRow < lastTemplateRow)
+            {
+                using (ExcelRange unusedRange = ws.Cells[lastWriteRow + 1, 1, lastTemplateRow, 2])
+                {
+                    unusedRange.Value = null;
+                    unusedRange.Style.Border.Top.Style = ExcelBorderStyle.None;
+                    unusedRange.Style.Border.Bottom.Style = ExcelBorderStyle.None;
+                    unusedRange.Style.Border.Left.Style = ExcelBorderStyle.None;
+                    unusedRange.Style.Border.Right.Style = ExcelBorderStyle.None;
+                    unusedRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                    unusedRange.Style.Fill.BackgroundColor.SetColor(ColorTranslator.FromHtml("#505050"));
+                }
+            }
         }
         #endregion
 
@@ -1069,7 +971,6 @@ namespace GetEnvironmentVariables
         }
         #endregion
     }
-    #endregion
 
 
 

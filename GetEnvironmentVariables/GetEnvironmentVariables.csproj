@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,20 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget>
     <Platforms>x64</Platforms>
-	<DebugType>embedded</DebugType>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="Excel Outputs\**" />
-    <Compile Remove="ExcelOutputs\**" />
-    <Compile Remove="JSON Outputs\**" />
-    <EmbeddedResource Remove="Excel Outputs\**" />
-    <EmbeddedResource Remove="ExcelOutputs\**" />
-    <EmbeddedResource Remove="JSON Outputs\**" />
-    <None Remove="Excel Outputs\**" />
-    <None Remove="ExcelOutputs\**" />
-    <None Remove="JSON Outputs\**" />
-  </ItemGroup>
 
   <ItemGroup>
     <Folder Include="Properties\PublishProfiles\" />
@@ -32,23 +20,6 @@
     <PackageReference Include="DanMarDev.WakeDrives" Version="2.0.0" />
     <PackageReference Include="DanMarDev.WinForms_CustomTools" Version="1.1.0" />
     <PackageReference Include="EPPlus" Version="8.7.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
     <PackageReference Include="SunnyUI" Version="3.9.8" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="appsettings.Development.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="appsettings.Local.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="appsettings.VJ_MUSICDEV.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 </Project>
