@@ -3,18 +3,13 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
-# Folder icons
+## Folder Icon Files
 desktop.ini
 folder_icon.ico
 
-# Temporary Reference Files
-_TemporaryImageReference/
-
-# Excel Files
-*.xls
-*.xlsx
-*.xlsb
-*.xlsm
+## AI Coding Resouces
+AGY/
+.vscode/
 
 # User-specific files
 *.rsuser
