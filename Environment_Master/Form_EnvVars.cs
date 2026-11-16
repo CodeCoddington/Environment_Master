@@ -12,7 +12,7 @@ using static DanMarDev.WinForms_CustomTools.MsgBoxType;
 
 
 
-namespace GetEnvironmentVariables
+namespace Environment_Master
 {
     public class Form_EnvVars : UIForm
     {
@@ -747,7 +747,7 @@ namespace GetEnvironmentVariables
 
             try
             {
-                IDictionary rawVars = Environment.GetEnvironmentVariables(target);
+                IDictionary rawVars = Environment.Environment_Master(target);
 
                 foreach (DictionaryEntry entry in rawVars)
                 {

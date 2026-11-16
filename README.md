@@ -1,4 +1,4 @@
 <!-- local_category: .NET Forms -->
-# GetEnvironmentVariables
+# Environment_Master
 
-- Allows user to read, print to Excel, update and / or add User and System Environment Variables.
+- Allows user full control over Environment Variables.

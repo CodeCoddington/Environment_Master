@@ -2,7 +2,7 @@
   <Configurations>
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="GetEnvironmentVariables/GetEnvironmentVariables.csproj">
+  <Project Path="Environment_Master/Environment_Master.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
 </Solution>

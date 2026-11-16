@@ -1,4 +1,4 @@
-namespace GetEnvironmentVariables
+namespace Environment_Master
 {
     internal static class Program
     {
