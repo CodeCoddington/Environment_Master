@@ -26,8 +26,8 @@ namespace Environment_Master
         const string CELL_TOOLTIP_TEXT = "Left-click to copy  |  Right-click to update or delete";
 
         public readonly string MachineName = Environment.MachineName;
-        public readonly string TemplateXlsmFilePath = @"D:\My Drive\_GlobalSync_Programming\Excel & Sheets\EnvVars\_Template\EnvVars_Template.xlsm";
-        public readonly string XlsmOutputDirectory = @"D:\My Drive\_GlobalSync_Programming\Excel & Sheets\EnvVars\Exports";
+        public readonly string TemplateXlsmFilePath = @"D:\My Drive\_GlobalSync\GDriveSync_Programming\Excel & Sheets\EnvVars\_Template\EnvVars_Template.xlsm";
+        public readonly string XlsmOutputDirectory = @"D:\My Drive\_GlobalSync\GDriveSync_Programming\Excel & Sheets\EnvVars\Exports";
 
         private Color _bgDark { get; } = Color.FromArgb(30, 30, 46);
         private Color _panelBg { get; } = Color.FromArgb(36, 36, 54);
@@ -82,13 +82,17 @@ namespace Environment_Master
         private void InitializeForm()
         {
             // Configure base form dimensions and dark styling
-            this.Text = "Environment Variables";
+            this.Text = "Environment Master";
             this.Size = new Size(FORM_WIDTH, FORM_HEIGHT);
             this.MinimumSize = new Size(860, 620);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = _bgDark;
             this.AllowShowTitle = true;
             this.ShowTitle = true;
+            using (var iconStream = new MemoryStream(Properties.Resources.Environment_Master_Icon))
+            {
+                this.Icon = new Icon(iconStream);
+            }
 
             // Apply Sunny.UI theme settings
             this.Style = UIStyle.DarkBlue;
@@ -427,8 +431,7 @@ namespace Environment_Master
             ApplySearchFilter();
 
             // Position panels and controls
-            LayoutPanels();
-        }
+            LayoutPanels();        }
 
         private void Form_EnvVars_Resize(object? sender, EventArgs e)
         {
@@ -747,7 +750,7 @@ namespace Environment_Master
 
             try
             {
-                IDictionary rawVars = Environment.Environment_Master(target);
+                IDictionary rawVars = Environment.GetEnvironmentVariables(target);
 
                 foreach (DictionaryEntry entry in rawVars)
                 {
